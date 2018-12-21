@@ -3,6 +3,7 @@ from nltk.stem import PorterStemmer
 import io
 import pandas as pd
 from dask import dataframe as dd 
+import dask.multiprocessing
 
 porter=PorterStemmer()
 
@@ -34,15 +35,14 @@ def clean(row):
 
 #test = pd.read_csv("./data/test.csv")
 
-train = pd.read_csv("./data/train.csv")
-
-stem2words(train)
-
-train = dd.from_pandas(train, npartitions=8)
-train["question_text"] = train["question_text"].apply(clean)
-train = train.compute()
-
-stem2words(train)
+#train = pd.read_csv("./data/train.csv")
+#stem2words(train)
+#train = dd.from_pandas(train, npartitions=8)
+train = dd.read_csv("./data/train.csv")
+train["question_text"] = train["question_text"].apply(clean, meta=('str'))
+train = train.compute(scheduler='threads')
+train.to_csv("train_restem.csv", index=False)
+#stem2words(train)
 #texts = train["question_text"].values.tolist()
 
 
