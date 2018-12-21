@@ -7,6 +7,8 @@ import pandas as pd
 from dask import dataframe as dd 
 import dask.multiprocessing
 from collections import Counter
+import json
+import time
 porter=PorterStemmer()
 
 def stemSentence(sentence):
@@ -18,13 +20,26 @@ def stemSentence(sentence):
         stem_sentence.append(" ")
     return "".join(stem_sentence)
 
-def load_vectors(fname):
+def load_vectors(fname, uniq_words):
     fin = io.open(fname, 'r', encoding='utf-8', newline='\n', errors='ignore')
     n, d = map(int, fin.readline().split())
     data = {}
+    how_many = 0
+    dd = time.time()
+    ll = len(uniq_words)
+    cc = 0
     for line in fin:
+        how_many += 1
+        if how_many % 10000 == 0:
+            print(how_many, time.time() - dd)
+            dd = time.time()
         tokens = line.rstrip().split(' ')
-        data[tokens[0]] = map(float, tokens[1:])
+        word = stemSentence(tokens[0])[:-1]
+        if word in uniq_words:
+            cc += 1
+            data[word] = list(map(float, tokens[1:]))
+            if cc == ll:
+                break            
     return data
 
 def stem2words(train):
@@ -33,24 +48,39 @@ def stem2words(train):
     
 
 def clean(row):
-    row = row.replace(":", " ").replace("/", " ").replace("-", " ").replace("=", " ").replace("\\", " ")
+    row = row.replace(":", " ").replace("/", " ") \
+                .replace("-", " ").replace("=", " ") \
+                .replace("\\", " ").replace("'", "") \
+                .replace("\"", "").replace(".", " ") \
+                .replace(",", " ")
     return stemSentence(row)
 
 #test = pd.read_csv("./data/test.csv")
 
-train = pd.read_csv("./data/train_restem.csv")
+def get_uniq_dict():
+    train = pd.read_csv("./data/train_restem2.csv")
+    all_words = stem2words(train)
 
-#all_words = stem2words(train)
-#print(len(all_words), len(list(set(all_words))))
+    count = [(k, v) for k, v in Counter(all_words).items()]
+    count = list(filter(lambda item: item[1] >= 10, count))
+    uniq_words = [k for k, v in count]
+    #uniq_words = list(set(all_words))
+    print(len(all_words), len(uniq_words))
+    return uniq_words
 
-#cc = Counter(all_words)
+uniq_words = get_uniq_dict()
+word2vec = load_vectors("wiki-news-300d-1M-subword.vec", uniq_words)
+json.dump(word2vec, open("word2vec.json", "w"))
 #print(cc)
 
 #train = dd.from_pandas(train, npartitions=8)
-train = dd.read_csv("./data/train.csv")
-train["question_text"] = train["question_text"].apply(clean, meta=('str'))
-train = train.compute(scheduler='threads')
-train.to_csv("train_restem.csv", index=False)
+def restem():
+    train = dd.read_csv("./data/train.csv")
+    train["question_text"] = train["question_text"].apply(clean, meta=('str'))
+    train = train.compute(scheduler='threads')
+    train.to_csv("train_restem.csv", index=False)
+
+#restem()
 #stem2words(train)
 #texts = train["question_text"].values.tolist()
 
