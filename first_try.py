@@ -9,6 +9,8 @@ import dask.multiprocessing
 from collections import Counter
 import json
 import time
+import numpy as np
+
 porter=PorterStemmer()
 
 def stemSentence(sentence):
@@ -66,11 +68,8 @@ def get_uniq_dict():
     uniq_words = [k for k, v in count]
     #uniq_words = list(set(all_words))
     print(len(all_words), len(uniq_words))
-    return uniq_words
-
-uniq_words = get_uniq_dict()
-word2vec = load_vectors("wiki-news-300d-1M-subword.vec", uniq_words)
-json.dump(word2vec, open("word2vec.json", "w"))
+    word2vec = load_vectors("wiki-news-300d-1M-subword.vec", uniq_words)
+    json.dump(word2vec, open("word2vec.json", "w"))
 #print(cc)
 
 #train = dd.from_pandas(train, npartitions=8)
@@ -80,10 +79,28 @@ def restem():
     train = train.compute(scheduler='threads')
     train.to_csv("train_restem.csv", index=False)
 
+
+
+def vectorize():
+    def do_vectorize(row):
+        row = filter(lambda item: item!='', row.split(" "))
+        new_row = np.asarray([words2vec[word] for word in row])
+        print(new_row.shape)
+        new_row = np.sum(new_row, axis=1)
+        print(new_row.shape)
+        return new_row
+
+
+    words2vec = json.load(open("word2vec.json", "r"))
+    train = dd.read_csv("./data/train_restem3.csv")
+    train["question_text"] = train["question_text"].apply(do_vectorize, meta=('list'))
+    train = train.compute(scheduler='threads')
+    train.to_csv("train_vectors.csv", index=False)
+
+vectorize()
 #restem()
 #stem2words(train)
 #texts = train["question_text"].values.tolist()
-
 
 #texts = [stemSentence(text) for text in texts]
 #all_words = [word for text in texts for word in text.split(" ")]
