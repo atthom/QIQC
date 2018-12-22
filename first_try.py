@@ -83,11 +83,14 @@ def restem():
 
 def vectorize():
     def do_vectorize(row):
-        row = filter(lambda item: item!='', row.split(" "))
-        new_row = np.asarray([words2vec[word] for word in row])
-        print(new_row.shape)
-        new_row = np.sum(new_row, axis=1)
-        print(new_row.shape)
+        try:
+            split_row = filter(lambda item: item!='', row.split(" "))
+        except:
+            split_row = [row]
+        new_row = np.asarray([0.0]*300)
+        for word in split_row:
+            if word in words2vec:
+                new_row += words2vec[word]
         return new_row
 
 
