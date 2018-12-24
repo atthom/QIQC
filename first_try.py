@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 
 from nltk.tokenize import sent_tokenize, word_tokenize
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
 from nltk.stem import PorterStemmer
-import io
-import pandas as pd
 from dask import dataframe as dd 
-import dask.multiprocessing
 from collections import Counter
+from sklearn.metrics import f1_score
+import dask.multiprocessing
+import xgboost as xgb
+import pandas as pd
+import numpy as np
+import io
 import json
 import time
-import numpy as np
+
 
 porter=PorterStemmer()
 
@@ -96,11 +101,152 @@ def vectorize():
 
     words2vec = json.load(open("word2vec.json", "r"))
     train = dd.read_csv("./data/train_restem3.csv")
-    train["question_text"] = train["question_text"].apply(do_vectorize, meta=('list'))
+    train["question_text"] = train["question_text"].apply(do_vectorize, meta=pd.Series())
     train = train.compute(scheduler='threads')
     train.to_csv("train_vectors.csv", index=False)
 
-vectorize()
+
+
+
+def learning():
+
+    print("load data...")
+    
+    Y = np.load("./data/Y_train.npy")
+    X = np.load("./data/all_desc32.npy")
+
+    print("format train/test dataset...")
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+    print("learning...")
+    xg_reg = xgb.XGBClassifier(objective ='binary:hinge', colsample_bytree = 0.3, learning_rate = 0.05,
+                    max_depth = 5, alpha = 10, n_estimators = 42)
+
+    xg_reg.fit(X_train, Y_train)
+
+
+    print("predict...")
+    Y_preds = xg_reg.predict(X_test)
+
+    print("f1 score:", f1_score(Y_test, Y_preds))
+
+
+def diry():
+    vectors = pd.read_csv("./data/train_vectors2.csv")["question_text"]
+    desc = []
+    cc = 0
+    cut = 1300000
+    for v in vectors:
+        cc += 1
+        
+        if cc > cut:
+            v = v.replace("[", "").replace("]", "")
+            v = filter(lambda item: item!='', v.split(" "))
+            true_vec = [float(val) for val in v]
+            desc.append(true_vec)
+            if cc % 1400000 == 0:
+                desc = np.array(desc)
+                np.save("desc" + str(cc) + ".npy", desc)
+                break
+
+    desc = np.array(desc)
+    np.save("desc" + str(cc) + ".npy", desc)
+
+    desc = np.load("desc100000.npy")
+    for i in range(2, 14):
+        di = np.load("desc" + str(i*100000) + ".npy")
+        desc = np.vstack((desc, di))
+
+    dlast = np.load("desc1306122.npy")
+    desc = np.vstack((desc, dlast))
+    print(desc.shape)
+
+    np.save("./data/all_desc.npy", desc)
+
+    vectors = pd.read_csv("./data/train_vectors2.csv")
+    Y = vectors["target"].values.reshape(-1, 1)
+    np.save("./data/Y_train", Y)
+
+    X = np.load("./data/all_desc.npy").astype(np.float32)
+    np.save("./data/all_desc32.npy", X)
+
+
+def bayesLearning():
+    from sklearn.naive_bayes import GaussianNB
+
+    print("load data...")
+    
+    Y = np.load("./data/Y_train.npy").ravel()
+    X = np.load("./data/all_desc32.npy")
+
+    print("format train/test dataset...")
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+    print("fit...")
+    clf = GaussianNB()
+    clf.fit(X_train, Y_train)
+
+    y_pred = clf.predict(X_test)
+    print("f1 score:", f1_score(Y_test, y_pred))
+
+
+def bayes2Learning():
+    from sklearn.svm import NuSVC
+
+    print("load data...")
+    
+    Y = np.load("./data/Y_train.npy").ravel()
+    X = np.load("./data/all_desc32.npy")
+
+    print("format train/test dataset...")
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+    print("fit...")
+    clf = NuSVC(nu=0.1)
+    clf.fit(X_train, Y_train)
+
+    y_pred = clf.predict(X_test)
+    print("f1 score:", f1_score(Y_test, y_pred))
+
+def randomForest2learning():
+    from sklearn.ensemble import RandomForestClassifier
+
+    print("load data...")
+    
+    Y = np.load("./data/Y_train.npy").ravel()
+    X = np.load("./data/all_desc32.npy")
+
+    print("format train/test dataset...")
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+    print("fit...")
+    clf = RandomForestClassifier(n_estimators=2, n_jobs=-1, random_state=42, verbose=1, min_samples_split=10)
+    clf.fit(X_train, Y_train)
+
+    y_pred = clf.predict(X_test)
+    print("f1 score:", f1_score(Y_test, y_pred))
+
+def isolationForest():
+    from sklearn.ensemble import IsolationForest
+
+    print("load data...")
+    
+    Y = np.load("./data/Y_train.npy").ravel()
+    X = np.load("./data/all_desc32.npy")
+
+    print("format train/test dataset...")
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+    print("fit...")
+    clf = IsolationForest(n_estimators=100, n_jobs=-1, random_state=42, verbose=1)
+    clf.fit(X_train, Y_train)
+
+    y_pred = clf.predict(X_test)
+    print("f1 score:", f1_score(Y_test, y_pred))
+
+isolationForest()
+
+#vectorize()
 #restem()
 #stem2words(train)
 #texts = train["question_text"].values.tolist()
